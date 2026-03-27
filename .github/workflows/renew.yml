@@ -1,0 +1,45 @@
+name: Host2Play Auto Renew
+
+on:
+  schedule:
+    # 每两天运行一次，建议避开整点以降低检测率
+    - cron: '25 3 */2 * *' 
+  workflow_dispatch:
+
+jobs:
+  renew:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🚀 检出代码
+        uses: actions/checkout@v4
+
+      - name: 🗂️ 缓存 NopeCHA 扩展
+        id: cache-nopecha
+        uses: actions/cache@v4
+        with:
+          path: nopecha_ext
+          key: nopecha-chromium-latest-v2 # 升级 key 以防配置更新
+
+      - name: 🧩 下载并预配置 NopeCHA
+        if: steps.cache-nopecha.outputs.cache-hit != 'true'
+        run: |
+          wget -q "https://github.com/NopeCHALLC/nopecha-extension/releases/latest/download/chromium.zip" -O nopecha.zip
+          unzip -q nopecha.zip -d nopecha_ext_raw
+          MANIFEST=$(find nopecha_ext_raw -name "manifest.json" | head -1)
+          mkdir -p nopecha_ext
+          cp -r "$(dirname $MANIFEST)/." nopecha_ext/
+          # 💡 关键：通过注入配置文件，强制开启自动识别功能（无需 API Key 的逻辑）
+          echo '{"enabled":true,"disabled_hosts":[],"settings":{"recaptcha":true,"hcaptcha":true,"funcaptcha":true,"datadome":true}}' > nopecha_ext/config.json
+          rm -rf nopecha_ext_raw nopecha.zip
+          python3 -c "import json;m=json.load(open('nopecha_ext/manifest.json'));print('✅ 扩展加载：',m['name'],'v'+m['version'])"
+
+      - name: 🛠️ 安装运行环境
+        run: |
+          npm init -y
+          npm install playwright
+          npx playwright install chromium
+
+      - name: 🔄 执行自动续期
+        run: |
+          # 使用 xvfb-run 模拟显示器，这是加载扩展所必须的
+          xvfb-run node renew.js
