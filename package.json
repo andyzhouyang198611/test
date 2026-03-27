@@ -1,0 +1,14 @@
+{
+  "name": "host2play-auto-renew",
+  "version": "1.0.0",
+  "description": "Automated renewal for Host2Play using Playwright and NopeCHA",
+  "main": "renew.js",
+  "scripts": {
+    "start": "node renew.js"
+  },
+  "dependencies": {
+    "playwright": "^1.42.0"
+  },
+  "author": "YourName",
+  "license": "MIT"
+}
