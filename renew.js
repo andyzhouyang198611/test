@@ -2,12 +2,17 @@ const { chromium } = require('playwright');
 const path = require('path');
 
 async function run() {
+    // 从环境变量读取 URL
+    const serverUrl = process.env.RENEW_URL;
     const extensionPath = path.resolve(__dirname, 'nopecha_ext');
-    // 请确保这里的 URL 是你自己的完整续期链接
-    const serverUrl = 'https://host2play.gratis/server/renew?i=你的UUID'; 
+
+    if (!serverUrl) {
+        console.error("❌ 错误：未检测到环境变量 RENEW_URL，请检查 GitHub Secrets 设置。");
+        process.exit(1);
+    }
 
     const browserContext = await chromium.launchPersistentContext('', {
-        headless: false, // 扩展必须在有头模式下运行
+        headless: false, // 必须为 false 扩展才生效
         args: [
             `--disable-extensions-except=${extensionPath}`,
             `--load-extension=${extensionPath}`,
@@ -19,33 +24,33 @@ async function run() {
     const page = await browserContext.newPage();
 
     try {
-        console.log('🚀 正在打开续期页面...');
+        console.log('🚀 正在访问续期页面...');
         await page.goto(serverUrl);
 
-        // 给 NopeCHA 一些时间来加载和自动识别
-        console.log('⏳ 等待 NopeCHA 自动识别验证码 (约 15-30秒)...');
+        console.log('⏳ 等待 NopeCHA 识别并破解验证码 (预计 30s)...');
         
-        // 监控“验证码已通过”的复选框状态（这是 reCAPTCHA 的内部 ID）
+        // 监控 reCAPTCHA 是否成功的状态（这是 Google 内部 ID）
         try {
-            await page.waitForSelector('#recaptcha-accessible-status:has-text("You are verified")', { timeout: 45000 });
+            await page.waitForSelector('#recaptcha-accessible-status:has-text("You are verified")', { timeout: 60000 });
             console.log('✅ 验证码破解成功！');
         } catch (e) {
-            console.log('⚠️ 等待超时，尝试强行点击 Renew 按钮...');
+            console.log('⚠️ 验证码破解超时，尝试直接寻找 Renew 按钮...');
         }
 
-        // 定位并点击紫色 Renew 按钮
+        // 寻找并点击 Renew 按钮
         const renewBtn = page.locator('button:has-text("Renew")');
         if (await renewBtn.isVisible()) {
             await renewBtn.click();
-            console.log('👆 已点击 Renew 按钮');
+            console.log('👆 已点击 Renew 按钮！');
+            // 等待页面跳转或弹出成功提示
+            await page.waitForTimeout(5000);
+            console.log('🎉 续期流程执行完毕。');
+        } else {
+            console.log('❌ 未找到 Renew 按钮，可能页面未加载完成或验证失败。');
         }
 
-        // 验证续期是否成功（根据页面反馈调整）
-        await page.waitForTimeout(5000);
-        console.log('🏁 任务结束，请登录面板确认时间。');
-
     } catch (err) {
-        console.error('❌ 脚本运行异常:', err);
+        console.error('❌ 脚本运行出错:', err.message);
     } finally {
         await browserContext.close();
     }
