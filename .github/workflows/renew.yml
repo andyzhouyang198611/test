@@ -1,13 +1,31 @@
 name: Host2Play Auto Renew
 
 on:
+  # 1. 修改代码后自动运行 (测试阶段非常有用)
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'renew.js'
+      - '.github/workflows/**'
+  
+  # 2. 定时任务：每 2 天的凌晨 4:45 运行 (避开高峰期)
   schedule:
-    - cron: '30 2 */2 * *' # 每两天运行一次
-  workflow_dispatch: # 支持手动运行按钮
+    - cron: '45 4 */2 * *'
+  
+  # 3. 手动触发按钮
+  workflow_dispatch:
+
+# 并发控制：当你推送新代码时，自动取消正在运行的旧任务
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   renew:
     runs-on: ubuntu-latest
+    
     steps:
       - name: 🚀 检出代码
         uses: actions/checkout@v4
@@ -17,9 +35,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: nopecha_ext
-          key: nopecha-chromium-latest-v1
+          key: nopecha-chromium-v1
 
-      - name: 🧩 下载并配置 NopeCHA
+      - name: 🧩 下载并预配置 NopeCHA
         if: steps.cache-nopecha.outputs.cache-hit != 'true'
         run: |
           wget -q "https://github.com/NopeCHALLC/nopecha-extension/releases/latest/download/chromium.zip" -O nopecha.zip
@@ -27,17 +45,26 @@ jobs:
           MANIFEST=$(find nopecha_ext_raw -name "manifest.json" | head -1)
           mkdir -p nopecha_ext
           cp -r "$(dirname $MANIFEST)/." nopecha_ext/
-          # 强制开启自动识别功能
+          # 💡 强制注入配置：开启自动识别，无需手动进插件设置
           echo '{"enabled":true,"settings":{"recaptcha":true,"hcaptcha":true}}' > nopecha_ext/config.json
           rm -rf nopecha_ext_raw nopecha.zip
+          echo "✅ NopeCHA 扩展已就绪"
 
-      - name: 🛠️ 安装环境
+      - name: 🛠️ 安装 Node.js 环境
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 📦 安装依赖项
         run: |
+          # 如果你没有上传 package.json，这里会自动安装
           npm install playwright
           npx playwright install chromium
 
-      - name: 🔄 执行自动续期
+      - name: 🔄 执行自动续期脚本
         env:
-          RENEW_URL: ${{ secrets.RENEW_URL }} # 👈 这里是关键：注入参数
+          # 从 GitHub Secrets 读取你的公开续期链接
+          RENEW_URL: ${{ secrets.RENEW_URL }}
         run: |
+          # 使用 xvfb-run 模拟显示器环境，否则插件无法加载
           xvfb-run node renew.js
