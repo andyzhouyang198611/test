@@ -1,67 +1,70 @@
 const { chromium } = require('playwright');
 const path = require('path');
+const fs = require('fs');
 
 async function run() {
     const serverUrl = process.env.RENEW_URL;
     const extensionPath = path.resolve(__dirname, 'nopecha_ext');
 
-    if (!serverUrl) {
-        console.error("❌ 错误：未在 GitHub Secrets 中找到 RENEW_URL");
-        process.exit(1);
-    }
-
     const browserContext = await chromium.launchPersistentContext('', {
-        headless: false, 
+        headless: false,
+        viewport: { width: 1280, height: 720 }, // 设置标准分辨率
         args: [
             `--disable-extensions-except=${extensionPath}`,
             `--load-extension=${extensionPath}`,
-            '--no-sandbox',
-            '--disable-setuid-sandbox'
+            '--no-sandbox'
         ],
     });
 
     const page = await browserContext.newPage();
 
     try {
-        console.log('🚀 正在打开公开续期页面...');
-        await page.goto(serverUrl);
+        console.log('🚀 正在打开页面: ' + serverUrl);
+        // 增加等待直到网络空闲，确保脚本加载完
+        await page.goto(serverUrl, { waitUntil: 'networkidle', timeout: 60000 });
 
-        // --- 第一步：点击 "Renew server" 按钮 ---
+        // --- 第一步：点击 "Renew server" ---
         const firstBtnSelector = 'button:has-text("Renew server")';
-        console.log('⏳ 等待蓝色的 "Renew server" 按钮出现...');
-        await page.waitForSelector(firstBtnSelector, { timeout: 15000 });
-        await page.click(firstBtnSelector);
-        console.log('✅ 已点击第一步按钮，等待验证码弹窗...');
+        console.log('⏳ 等待第一步按钮 (增加到 30秒)...');
+        
+        // 使用 state: 'attached' 只要按钮在代码里就行，不强求它必须“可见”
+        await page.waitForSelector(firstBtnSelector, { state: 'attached', timeout: 30000 });
+        
+        // 关键改动：使用 force: true 强制点击隐藏元素
+        await page.click(firstBtnSelector, { force: true });
+        console.log('✅ 已强制点击第一步按钮');
 
-        // --- 第二步：等待 NopeCHA 破解 reCAPTCHA ---
-        console.log('⏳ NopeCHA 正在破解验证码，请稍候 (约 20-40s)...');
+        // --- 第二步：等待 NopeCHA 破解 ---
+        console.log('⏳ 等待验证码破解...');
+        await page.waitForTimeout(5000); // 先等弹窗弹出
+        
+        // 截图一张，看看弹窗出来没
+        await page.screenshot({ path: 'step1_clicked.png' });
+
         try {
-            // 监控 Google 验证码状态
             await page.waitForSelector('#recaptcha-accessible-status:has-text("You are verified")', { timeout: 60000 });
-            console.log('✅ 验证码破解成功！');
+            console.log('✅ 验证码破解完成');
         } catch (e) {
-            console.log('⚠️ 验证码状态检测超时，将尝试直接点击最终按钮。');
+            console.log('⚠️ 验证码未检测到完成状态，尝试继续...');
         }
 
-        // --- 第三步：点击紫色的 "Renew" 按钮 ---
-        // 稍微等待一下确保 Token 填入
-        await page.waitForTimeout(3000); 
+        // --- 第三步：点击最终 "Renew" ---
         const secondBtnSelector = 'button:has-text("Renew")';
-        
-        // 注意：这里用 locator().last() 是因为页面上可能同时存在旧的按钮
         const finalBtn = page.locator(secondBtnSelector).last();
         
-        if (await finalBtn.isVisible()) {
-            await finalBtn.click();
-            console.log('👆 已点击最终 "Renew" 按钮！');
-            await page.waitForTimeout(5000); // 等待请求完成
-            console.log('🎉 自动续期任务执行完毕！');
-        } else {
-            console.error('❌ 错误：未找到紫色的 "Renew" 按钮。');
-        }
+        await finalBtn.waitFor({ state: 'attached', timeout: 10000 });
+        await finalBtn.click({ force: true });
+        console.log('👆 已点击最终续期按钮！');
+
+        await page.waitForTimeout(5000);
+        await page.screenshot({ path: 'final_result.png' });
+        console.log('🎉 任务结束');
 
     } catch (err) {
-        console.error('❌ 脚本运行异常:', err.message);
+        console.error('❌ 运行出错:', err.message);
+        // 出错时强制截图，方便调试
+        await page.screenshot({ path: 'error_debug.png' });
+        process.exit(1);
     } finally {
         await browserContext.close();
     }
