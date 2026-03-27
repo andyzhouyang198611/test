@@ -61,10 +61,19 @@ jobs:
           npm install playwright
           npx playwright install chromium
 
+
+
       - name: 🔄 执行自动续期脚本
         env:
-          # 从 GitHub Secrets 读取你的公开续期链接
           RENEW_URL: ${{ secrets.RENEW_URL }}
         run: |
-          # 使用 xvfb-run 模拟显示器环境，否则插件无法加载
           xvfb-run node renew.js
+
+      - name: 📸 上传调试截图
+        if: always() # 强制执行：无论脚本成功还是失败，都会上传图片
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-screenshots
+          path: |
+            *.png
+          retention-days: 1
